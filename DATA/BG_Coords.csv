@@ -1,0 +1,16 @@
+object_name,ID,x,y
+mountain,1,350,55
+mountain,2,625,30
+mountain,3,752,49
+mountain,4,944,49
+sky,1,387,20
+sky,2,555,20
+sky,3,766,22
+sky,4,952,8
+sky,5,1049,6
+sky,6,1241,6
+volcano,1,55,40
+volcano,2,110,18
+water,1,352,90
+water,2,481,120
+water,3,1055,122
