@@ -6,6 +6,7 @@
 library(jpeg)
 library(tidyverse)
 library(deldir); library(rgdal)
+library(ggmap); library(maptools); library(maps)
 
 aor.raw <- readJPEG("AgeOfReptiles.jpg")
 
@@ -149,8 +150,15 @@ aor.poly <- readRDS("DATA/AoR_PointsInVor.RDS")
 aor.poly2 <- readRDS("DATA/AoR_Voronoi.RDS")
 
 ####
-# Where on earth are these polygons
+# Chart
 ####
+aor.orig.x <- timeline.period %>% 
+  select(label = period, value = x_median) %>% 
+  bind_rows(timeline.period %>% 
+              select(label = earliest, value = x_earliest) %>% 
+              mutate(label = as.character(label))) %>% 
+  arrange(value)
+
 
 paleobio.raw <- readRDS("DATA/PaleobioDB_fauna.RDS")
 
@@ -218,3 +226,149 @@ ggplot(aes(x=x, y=y),
     legend.position = "bottom",
     legend.text = element_text(size = 10)
   )
+
+###
+# Distibution of WW fossils by Genus
+###
+
+theme_map <- function(){
+  tm <- theme_bw() +
+    theme( 
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.title.y = element_blank(),
+      axis.line.y = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.title.x = element_blank(),
+      axis.line.x = element_blank(),
+      panel.background=element_blank(),panel.border=element_blank(),
+      panel.grid.major=element_blank(),
+      panel.grid.minor=element_blank(),plot.background=element_blank(),
+      strip.background = element_rect(fill = "#00436b"),
+      strip.text = element_text(color = "white", face = "bold", size = 10),
+      plot.title = element_text(color = "#00436b", face = "bold", size = 16),
+      plot.subtitle = element_text(color = "#00436b", size = 14),
+      plot.caption = element_text(size = 11),
+      legend.position = "bottom",
+      legend.text = element_text(size = 10)
+    )
+  return(tm)
+}
+
+paleobio.map <- paleobio.raw %>% 
+  mutate_at(vars(lng, lat, min_ma), as.numeric)%>% 
+  mutate(Period = case_when(
+    min_ma > 290 ~ timeline.period$period[5],
+    min_ma > 248 ~ timeline.period$period[4],
+    min_ma > 206 ~ timeline.period$period[3],
+    min_ma > 144 ~ timeline.period$period[2],
+    TRUE ~ timeline.period$period[1]
+  )) %>% 
+  mutate(Period = factor(Period, levels = timeline.period$period[5:1])) %>% 
+  count(AOR_Fauna, lat, lng, cc, Period, min_ma) 
+
+ggplot() +
+  borders("world", color="#333333", fill="#cccccc") +
+  geom_point(data = paleobio.map, aes(x = lng, y = lat, size = n, color = AOR_Fauna),
+             alpha = 0.5) +
+  facet_wrap(~Period, nrow = 3, ncol = 2) + 
+  labs(title = "Locations of specimens featured in Age of Reptiles") +
+  coord_fixed() +
+  theme_map()
+
+#NAmerica only
+ggplot() +
+  borders("world", color="#333333", fill="#cccccc") +
+  geom_point(data = paleobio.map, aes(x = lng, y = lat, size = n, color = AOR_Fauna),
+             alpha = 0.5) +
+  facet_wrap(~Period) + 
+  labs(title = "Locations of specimens featured in Age of Reptiles",
+       subtitle = "North America") +
+  coord_fixed(xlim = c(-150, -60), ylim = c(15, 60)) +
+  theme_map() +
+  theme(legend.position = "none")
+
+
+####
+# Put the stegosaurus on the map?
+####
+sel.fauna <- "dimetrodon"
+
+pnt.size <- 10
+
+paleobio.sel <- paleobio.raw %>% 
+  filter(AOR_Fauna == sel.fauna) %>%
+  mutate_at(vars(lat, lng), as.numeric) %>% 
+  group_by(AOR_Fauna, cc) %>% 
+  summarize(lat_mean = mean(lat, na.rm = T),
+            lng_mean = mean(lng, na.rm = T)) %>% 
+  mutate(lat_min = lat_mean - pnt.size,
+         lat_max = lat_mean + pnt.size,
+         lng_min = lng_mean - pnt.size,
+         lng_max = lng_mean + pnt.size) %>% 
+  ungroup() %>% 
+  rename(object_name = AOR_Fauna)
+
+
+aor.poly.paleobio <- aor.poly2 %>% 
+  filter(object_name == sel.fauna) %>% 
+  left_join(paleobio.sel) %>% 
+  group_by(object_name, cc) %>% 
+  mutate_at(vars(lat_min, lat_max, lng_min, lng_max), as.numeric) %>% 
+  mutate(y_lat =  (lat_max - lat_min) * (y - min(y)) / (max(y) - min(y)) + lat_min,
+         x_lng =  (lng_max - lng_min) * (x - min(x)) / (max(x) - min(x)) + lng_min) %>% 
+  ungroup() %>% 
+  mutate(y_lat2 = floor(y_lat), x_lng2 = floor(x_lng)) %>% 
+  group_by(y_lat2, x_lng2) %>% 
+  filter(row_number() == 1) %>% 
+  ungroup()
+
+# 
+# ggplot(aes(x=-x_lng2, y=y_lat2),
+#        data = aor.poly.paleobio) +
+#   geom_tile(aes(fill = color)) +
+#   scale_fill_identity() +
+#   #geom_point(data = coords_object, mapping = aes(x=x, y=y, color=object_type)) +
+#   #scale_color_manual(values = c("fauna" = "#ff4040", "flora" = "forestgreen", "background" = "#4040ff")) + 
+#   labs(title = "Geography of fauna fossils",
+#        subtitle = "The Age of Reptiles | Rudolph Zallinger",
+#        caption =  "Yale Peabody Museum | paleobiodb.org | @RyanTimpe") +
+#   coord_fixed() +
+#   theme_bw() +
+#   theme( 
+#     axis.text.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+#     axis.title.y = element_blank(),
+#     axis.line.y = element_blank(),
+#     axis.text.x = element_text(size = 11),
+#     panel.background=element_blank(),panel.border=element_blank(),
+#     panel.grid.major=element_blank(),
+#     panel.grid.minor=element_blank(),plot.background=element_blank(),
+#     strip.background = element_rect(fill = "#00436b"),
+#     strip.text = element_text(color = "white", face = "bold", size = 12),
+#     plot.title = element_text(color = "#00436b", face = "bold", size = 16),
+#     plot.subtitle = element_text(color = "#00436b", size = 14),
+#     plot.caption = element_text(size = 11),
+#     legend.position = "bottom",
+#     legend.text = element_text(size = 10)
+#   )
+
+map.cutoffs <- list( lng = c(min(aor.poly.paleobio$x_lng2)-pnt.size,
+                             max(aor.poly.paleobio$x_lng2)+pnt.size),
+                     lat = c(min(aor.poly.paleobio$y_lat2)-pnt.size,
+                             max(aor.poly.paleobio$y_lat2)+pnt.size))
+
+ggplot() +
+  borders("world", color="#333333", fill="#cccccc") +
+  geom_tile(data = aor.poly.paleobio, aes(x=x_lng2, y=y_lat2, fill = color)) +
+  scale_fill_identity() +
+  #geom_point(data = coords_object, mapping = aes(x=x, y=y, color=object_type)) +
+  #scale_color_manual(values = c("fauna" = "#ff4040", "flora" = "forestgreen", "background" = "#4040ff")) + 
+  labs(title = "Geography of fauna fossils",
+       subtitle = "The Age of Reptiles | Rudolph Zallinger",
+       caption =  "Yale Peabody Museum | paleobiodb.org | @RyanTimpe") +
+  coord_fixed(xlim = map.cutoffs$lng, ylim = map.cutoffs$lat) +
+  theme_map() +
+  theme(legend.position = "none")
+  
