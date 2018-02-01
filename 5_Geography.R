@@ -160,7 +160,41 @@ aor.orig.x <- timeline.period %>%
   arrange(value)
 
 
-paleobio.raw <- readRDS("DATA/PaleobioDB_fauna.RDS")
+###
+# Paleobio - where are the animals found
+###
+
+simpleCap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2),
+        sep="", collapse=" ")
+}
+
+paleobio.raw <- readRDS("DATA/PaleobioDB_fauna.RDS") %>% 
+  rowwise() %>% 
+  mutate(AOR_Fauna =  paste(toupper(substring(AOR_Fauna, 1,1)), substring(AOR_Fauna, 2),
+                            sep="", collapse=" ")) %>% 
+  ungroup()
+
+pb.aor.geos <- paleobio.raw %>% 
+  group_by(AOR_Fauna) %>% 
+  mutate(Specimens = n(),
+         `N_America` = any(grepl("US|CA|MX|GL", cc))) %>% 
+  ungroup() %>% 
+  count(AOR_Fauna, Specimens, N_America, cc) %>% 
+  arrange(desc(n)) %>% 
+  group_by(AOR_Fauna, Specimens, N_America) %>% 
+  mutate(rown = row_number(),
+         cc_n = paste0(cc, " (", n, ")")) %>% 
+  ungroup() %>% 
+  select(-n, -cc) %>%
+  spread(rown, cc_n)
+
+aor_fauna_df %>% 
+  group_by(AOR_Fauna) %>% 
+  summarize(in_us = "US" %in% cc) %>% 
+  filter(!in_us) %>% 
+  pull(AOR_Fauna)
 
 paleobio <- paleobio.raw %>% 
   mutate(cc = ifelse(is.na(cc), "Unknown", cc)) %>% 
